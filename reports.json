@@ -1,0 +1,17 @@
+{
+    "nextId": 2,
+    "reports": {
+        "1": {
+            "id": 1,
+            "userId": "1364106692908023898",
+            "username": "andrea306az",
+            "reason": "Hacking",
+            "description": "The player was flying and going really fast in the game, couldn't be caught, and won",
+            "evidence": "",
+            "status": "INVALID",
+            "createdAt": 1786414778219,
+            "updatedAt": 1786414825998,
+            "updatedBy": "1364106692908023898"
+        }
+    }
+}
