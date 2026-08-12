@@ -21,7 +21,8 @@ const {
   ButtonStyle,
   ModalBuilder,
   TextInputBuilder,
-  TextInputStyle
+  TextInputStyle,
+  StringSelectMenuBuilder
 } = require("discord.js");
 
 const fs = require("fs");
@@ -38,26 +39,9 @@ const WELCOME_CHANNEL_ID = process.env.WELCOME_CHANNEL_ID;
 const VOICE_CREATOR_CHANNEL_ID = process.env.VOICE_CREATOR_CHANNEL_ID || "ID_CANAL_CREADOR_AQUI";
 const VOICE_CATEGORY_ID = process.env.VOICE_CATEGORY_ID || "ID_CATEGORIA_AQUI";
 
-// Estructuras de control para voz
-const tempChannels = new Map(); // channelId -> ownerId
-const deletionTimers = new Map(); // channelId -> timeoutId
-const dailyVoiceUsage = new Map(); // userId -> { count, lastReset }
-
-function checkVoiceLimit(userId) {
-  const today = new Date().toDateString();
-  const userStats = dailyVoiceUsage.get(userId) || { count: 0, lastReset: today };
-
-  if (userStats.lastReset !== today) {
-    userStats.count = 0;
-    userStats.lastReset = today;
-  }
-
-  if (userStats.count >= 2) return false;
-
-  userStats.count += 1;
-  dailyVoiceUsage.set(userId, userStats);
-  return true;
-}
+// Mapa de canales temporales: channelId -> ownerId
+const tempChannels = new Map();
+const trustedUsers = new Map(); // channelId -> Set(userIds)
 
 // ============================================================
 // ROLES
@@ -66,7 +50,7 @@ function checkVoiceLimit(userId) {
 const BOOSTER_ROLE_ID = "1537221057134592100";
 
 // ============================================================
-// LOGGER
+// LOGGER & SYSTEMS
 // ============================================================
 
 const {
@@ -77,15 +61,11 @@ const {
   logMemberUpdate
 } = require("./utils/logger");
 
-// ============================================================
-// SYSTEMS
-// ============================================================
-
 const { handleAutoResponse } = require("./systems/autoresponse");
 const { handleAutoMod } = require("./systems/automod");
 
 // ============================================================
-// CLIENT
+// CLIENT SETUP
 // ============================================================
 
 const client = new Client({
@@ -96,7 +76,6 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildVoiceStates
   ],
-
   partials: [
     Partials.Channel,
     Partials.Message,
@@ -105,346 +84,96 @@ const client = new Client({
   ]
 });
 
-// ============================================================
-// COMMAND COLLECTION
-// ============================================================
-
 client.commands = new Collection();
-
 const commandsPath = path.join(__dirname, "commands");
 
-if (!fs.existsSync(commandsPath)) {
-  console.error("SHIFT // Commands directory not found.");
-  process.exit(1);
-}
-
-// ============================================================
-// LOAD COMMANDS
-// ============================================================
-
-const commandFiles = fs
-  .readdirSync(commandsPath)
-  .filter(file => file.endsWith(".js"));
-
-for (const file of commandFiles) {
-  const filePath = path.join(commandsPath, file);
-
-  try {
-    const command = require(filePath);
-
-    if (!command.data || !command.execute) {
-      console.warn(`SHIFT // Invalid command: ${file}`);
-      continue;
+if (fs.existsSync(commandsPath)) {
+  const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith(".js"));
+  for (const file of commandFiles) {
+    try {
+      const command = require(path.join(commandsPath, file));
+      if (command.data && command.execute) client.commands.set(command.data.name, command);
+    } catch (error) {
+      console.error(`SHIFT // Error cargando comando ${file}:`, error);
     }
-
-    client.commands.set(command.data.name, command);
-
-    console.log(`SHIFT // Command loaded: /${command.data.name}`);
-  } catch (error) {
-    console.error(`SHIFT // Failed to load ${file}:`, error);
   }
 }
 
 // ============================================================
-// READY
+// HELPER: CREAR PANEL DE CONTROL
+// ============================================================
+
+function createControlPanel(owner) {
+  const embed = new EmbedBuilder()
+    .setColor("#5865F2")
+    .setTitle("⚙️ Panel de control")
+    .setDescription(
+      `⚙️ **Configuración**\n\n` +
+      `• **PROPIETARIO DEL CANAL**\n` +
+      `👤 ${owner} • \`${owner.user.tag}\`\n\n` +
+      `📅 **Cuenta creada:** <t:${Math.floor(owner.user.createdTimestamp / 1000)}:R>\n` +
+      `⏰ **Unión al servidor:** <t:${Math.floor(owner.joinedTimestamp / 1000)}:f>`
+    )
+    .setThumbnail(owner.user.displayAvatarURL({ dynamic: true, size: 256 }))
+    .setFooter({ text: "SHIFT // VOICE SYSTEM" });
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("vc_general_settings")
+      .setLabel("⚙️ Ajustes generales")
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId("vc_admin_users")
+      .setLabel("🔨 Administrar usuarios")
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("vc_trusted_list")
+      .setLabel("👤 Gestionar lista de confiados")
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId("vc_claim_channel")
+      .setLabel("👑 Reclamar canal sin propietario")
+      .setStyle(ButtonStyle.Primary)
+  );
+
+  return { embeds: [embed], components: [row1, row2] };
+}
+
+// ============================================================
+// READY EVENT
 // ============================================================
 
 client.once(Events.ClientReady, readyClient => {
   console.log("");
   console.log("==========================================");
-  console.log("SHIFT // SECURITY SYSTEM");
-  console.log("System: ONLINE");
+  console.log("SHIFT // CONTROL PANEL VOICE SYSTEM");
   console.log(`Identity: ${readyClient.user.tag}`);
-  console.log(`Servers: ${readyClient.guilds.cache.size}`);
-  console.log(`Commands: ${client.commands.size}`);
-  console.log("Logging System: ONLINE");
-  console.log("Booster System: ONLINE");
-  console.log("AutoMod System: ONLINE");
-  console.log("AutoResponse System: ONLINE");
-  console.log("Temp Voice System: ONLINE (Modal Mode)");
-  console.log("Environment: RAILWAY");
+  console.log("System Status: ONLINE");
   console.log("==========================================");
   console.log("");
 });
 
 // ============================================================
-// MEMBER JOIN
-// ============================================================
-
-client.on(Events.GuildMemberAdd, async member => {
-  try {
-    if (GUILD_ID && member.guild.id !== GUILD_ID) return;
-
-    await logMemberJoin(member);
-
-    if (WELCOME_CHANNEL_ID) {
-      const welcomeChannel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
-
-      if (welcomeChannel) {
-        const welcomeEmbed = new EmbedBuilder()
-          .setColor("#00ffb3")
-          .setTitle("🛡️ REGISTRO DE INGRESO // ACCESS CONTROL")
-          .setThumbnail(
-            member.user.displayAvatarURL({
-              dynamic: true,
-              size: 256
-            })
-          )
-          .setDescription(
-            `🟢 **NUEVO ACCESO DETECTADO**\n\n` +
-            `🇪🇸 **Estimado/a ${member}, bienvenido/a a ${member.guild.name}.**\n\n` +
-            `Se ha establecido una nueva conexión con la comunidad. ` +
-            `Para obtener acceso completo, revisa el reglamento ` +
-            `y completa el proceso de verificación correspondiente.\n\n` +
-            `🇺🇸 **Welcome to ${member.guild.name}, ${member}.**\n\n` +
-            `A new connection has been established with the community. ` +
-            `Please review the community guidelines and complete ` +
-            `the required verification process.`
-          )
-          .addFields(
-            { name: "👤 USER", value: `${member}`, inline: true },
-            { name: "🆔 USER IDENTIFIER", value: `\`${member.id}\``, inline: true },
-            { name: "📋 ACCESS RECORD", value: `\`#${member.guild.memberCount}\``, inline: true },
-            { name: "🔐 ACCESS STATUS", value: "`PENDING VERIFICATION`", inline: false }
-          )
-          .setFooter({
-            text: "SHIFT // SECURITY NETWORK • CONNECTION ESTABLISHED",
-            iconURL: member.guild.iconURL()
-          })
-          .setTimestamp();
-
-        await welcomeChannel.send({
-          content: `🟢 **SHIFT // ACCESS DETECTED**\n${member}`,
-          embeds: [welcomeEmbed]
-        });
-      }
-    }
-
-    const verifyCommand = client.commands.get("verify");
-    if (verifyCommand && typeof verifyCommand.restoreVerification === "function") {
-      const restored = await verifyCommand.restoreVerification(member);
-      if (restored) console.log(`SHIFT // Verification restored: ${member.user.tag}`);
-    }
-  } catch (error) {
-    console.error("SHIFT // Member join error:", error);
-  }
-});
-
-// ============================================================
-// MEMBER LEAVE
-// ============================================================
-
-client.on(Events.GuildMemberRemove, async member => {
-  try {
-    if (GUILD_ID && member.guild.id !== GUILD_ID) return;
-    await logMemberLeave(member);
-  } catch (error) {
-    console.error("SHIFT // Member leave error:", error);
-  }
-});
-
-// ============================================================
-// MEMBER UPDATE
-// ============================================================
-
-client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
-  try {
-    if (GUILD_ID && newMember.guild.id !== GUILD_ID) return;
-    await logMemberUpdate(oldMember, newMember);
-
-    const boosterRole = newMember.guild.roles.cache.get(BOOSTER_ROLE_ID);
-    if (!boosterRole) return;
-
-    if (!oldMember.premiumSince && newMember.premiumSince) {
-      if (!newMember.roles.cache.has(BOOSTER_ROLE_ID)) {
-        await newMember.roles.add(boosterRole, "SHIFT // Server Boost detected");
-      }
-      return;
-    }
-
-    if (oldMember.premiumSince && !newMember.premiumSince) {
-      if (newMember.roles.cache.has(BOOSTER_ROLE_ID)) {
-        await newMember.roles.remove(boosterRole, "SHIFT // Server Boost removed");
-      }
-    }
-  } catch (error) {
-    console.error("SHIFT // Member update error:", error);
-  }
-});
-
-// ============================================================
-// TEMPORARY VOICE SYSTEM
+// TEMPORARY VOICE SYSTEM (JOIN-TO-CREATE)
 // ============================================================
 
 client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
   try {
     if (GUILD_ID && newState.guild.id !== GUILD_ID) return;
 
-    // 1. EL USUARIO ENTRA AL CANAL CREADOR DE VOZ
+    // 1. CREACIÓN AUTOMÁTICA AL ENTRAR
     if (newState.channelId === VOICE_CREATOR_CHANNEL_ID) {
       const member = newState.member;
-      const creatorChannel = newState.channel;
+      const guild = newState.guild;
 
-      // Verificar límite de 2 creaciones diarias
-      if (!checkVoiceLimit(member.id)) {
-        await member.voice.disconnect().catch(() => null);
-        return creatorChannel.send({
-          content: `⚠️ ${member}, has alcanzado el límite máximo de **2 canales de voz** creados por día.`
-        }).then(msg => setTimeout(() => msg.delete().catch(() => null), 10000));
-      }
-
-      // Enviar mensaje en el chat del canal de voz con botón para configurar
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`setup_vc_${member.id}`)
-          .setLabel("⚙️ Configurar y Crear Canal")
-          .setStyle(ButtonStyle.Success)
-      );
-
-      await creatorChannel.send({
-        content: `👋 ${member}, presiona el botón para elegir el **nombre** y **límite de usuarios** de tu sala:`,
-        components: [row]
-      }).then(msg => setTimeout(() => msg.delete().catch(() => null), 30000));
-    }
-
-    // 2. GESTIÓN DE INACTIVIDAD (30 MINUTOS SIN USUARIOS)
-    if (oldState.channelId && oldState.channelId !== newState.channelId) {
-      const oldChannel = oldState.channel;
-
-      if (oldChannel && tempChannels.has(oldChannel.id) && oldChannel.members.size === 0) {
-        // Temporizador de 30 minutos
-        const timer = setTimeout(async () => {
-          if (oldChannel && oldChannel.members.size === 0) {
-            tempChannels.delete(oldChannel.id);
-            deletionTimers.delete(oldChannel.id);
-            await oldChannel.delete().catch(() => null);
-          }
-        }, 30 * 60 * 1000);
-
-        deletionTimers.set(oldChannel.id, timer);
-      }
-    }
-
-    // Cancelar borrado si entra alguien antes de los 30 min
-    if (newState.channelId && tempChannels.has(newState.channelId)) {
-      const currentChannel = newState.channel;
-      if (currentChannel.members.size > 0 && deletionTimers.has(currentChannel.id)) {
-        clearTimeout(deletionTimers.get(currentChannel.id));
-        deletionTimers.delete(currentChannel.id);
-      }
-    }
-
-  } catch (error) {
-    console.error("SHIFT // VoiceStateUpdate error:", error);
-  }
-});
-
-// ============================================================
-// MESSAGE CREATE (AUTOMOD + AUTORESPONSE)
-// ============================================================
-
-client.on(Events.MessageCreate, async message => {
-  try {
-    if (!message.guild || message.author.bot) return;
-    if (GUILD_ID && message.guild.id !== GUILD_ID) return;
-
-    const blocked = await handleAutoMod(message);
-    if (blocked) return;
-
-    await handleAutoResponse(message);
-  } catch (error) {
-    console.error("SHIFT // MessageCreate error:", error);
-  }
-});
-
-// ============================================================
-// MESSAGE DELETE / UPDATE
-// ============================================================
-
-client.on(Events.MessageDelete, async message => {
-  try {
-    if (!message.guild) return;
-    if (GUILD_ID && message.guild.id !== GUILD_ID) return;
-    await logMessageDelete(message);
-  } catch (error) {
-    console.error("SHIFT // Message delete error:", error);
-  }
-});
-
-client.on(Events.MessageUpdate, async (oldMessage, newMessage) => {
-  try {
-    if (!newMessage.guild) return;
-    if (GUILD_ID && newMessage.guild.id !== GUILD_ID) return;
-    await logMessageUpdate(oldMessage, newMessage);
-  } catch (error) {
-    console.error("SHIFT // Message update error:", error);
-  }
-});
-
-// ============================================================
-// INTERACTIONS
-// ============================================================
-
-client.on(Events.InteractionCreate, async interaction => {
-  try {
-
-    // 1. PRESIONAR EL BOTÓN EN EL CANAL CREADOR
-    if (interaction.isButton() && interaction.customId.startsWith("setup_vc_")) {
-      const ownerId = interaction.customId.split("_")[2];
-
-      if (interaction.user.id !== ownerId) {
-        return interaction.reply({
-          content: "❌ Este botón solo puede ser usado por la persona que entró al canal.",
-          flags: MessageFlags.Ephemeral
-        });
-      }
-
-      // Abrir ventana emergente (Modal)
-      const modal = new ModalBuilder()
-        .setCustomId("modal_create_vc")
-        .setTitle("Configurar Canal de Voz");
-
-      const nameInput = new TextInputBuilder()
-        .setCustomId("vc_name")
-        .setLabel("Nombre del canal de voz")
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder("Ej. Sala de Juegos")
-        .setRequired(true);
-
-      const limitInput = new TextInputBuilder()
-        .setCustomId("vc_limit")
-        .setLabel("Límite de usuarios (0 para sin límite)")
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder("0 - 99")
-        .setValue("0")
-        .setRequired(true);
-
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(nameInput),
-        new ActionRowBuilder().addComponents(limitInput)
-      );
-
-      return await interaction.showModal(modal);
-    }
-
-    // 2. ENVIAR EL FORMULARIO (MODAL SUBMIT)
-    if (interaction.isModalSubmit() && interaction.customId === "modal_create_vc") {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-      const name = interaction.fields.getTextInputValue("vc_name");
-      let limit = parseInt(interaction.fields.getTextInputValue("vc_limit"), 10);
-
-      if (isNaN(limit) || limit < 0 || limit > 99) limit = 0;
-
-      const member = interaction.member;
-      const guild = interaction.guild;
-
-      // Crear el canal de voz personalizado
+      // Crear canal privado
       const tempChannel = await guild.channels.create({
-        name: `🔊 ${name}`,
+        name: `🔊 Sala de ${member.displayName}`,
         type: ChannelType.GuildVoice,
-        userLimit: limit,
-        parent: VOICE_CATEGORY_ID || interaction.channel.parentId,
+        parent: VOICE_CATEGORY_ID || newState.channel.parentId,
         permissionOverwrites: [
           {
             id: member.id,
@@ -454,123 +183,214 @@ client.on(Events.InteractionCreate, async interaction => {
       });
 
       tempChannels.set(tempChannel.id, member.id);
+      trustedUsers.set(tempChannel.id, new Set());
 
-      // Mover al usuario a su nuevo canal si sigue en voz
+      // Mover al creador
       if (member.voice.channel) {
         await member.voice.setChannel(tempChannel);
       }
 
-      return await interaction.editReply({
-        content: `✅ ¡Canal creado con éxito! Te hemos movido a **${tempChannel.name}**.`
-      });
+      // Enviar el panel de control interactivo dentro del chat de la sala
+      const panelData = createControlPanel(member);
+      await tempChannel.send(panelData);
     }
 
-    // BUTTONS DE OTROS SISTEMAS
+    // 2. ELIMINACIÓN AUTOMÁTICA SI QUEDA VACÍO
+    if (oldState.channelId && tempChannels.has(oldState.channelId)) {
+      const oldChannel = oldState.channel;
+
+      if (oldChannel && oldChannel.members.size === 0) {
+        tempChannels.delete(oldChannel.id);
+        trustedUsers.delete(oldChannel.id);
+        await oldChannel.delete().catch(() => null);
+      }
+    }
+
+  } catch (error) {
+    console.error("SHIFT // VoiceStateUpdate error:", error);
+  }
+});
+
+// ============================================================
+// INTERACTION HANDLER (PANEL DE CONTROL)
+// ============================================================
+
+client.on(Events.InteractionCreate, async interaction => {
+  try {
+    if (!interaction.guild) return;
+
+    // A. INTERACCIONES DE BOTONES
     if (interaction.isButton()) {
-      const customId = interaction.customId;
+      const { customId, channel, user, member } = interaction;
 
-      if (customId.startsWith("help_")) {
-        const command = client.commands.get("help");
-        if (command && typeof command.handleButton === "function") await command.handleButton(interaction);
-        return;
+      if (!tempChannels.has(channel.id)) return;
+
+      const currentOwnerId = tempChannels.get(channel.id);
+      const isOwner = user.id === currentOwnerId;
+
+      // --- RECLAMAR CANAL ---
+      if (customId === "vc_claim_channel") {
+        const ownerInChannel = channel.members.has(currentOwnerId);
+
+        if (ownerInChannel && !isOwner) {
+          return interaction.reply({
+            content: "❌ El propietario actual sigue conectado en la sala.",
+            flags: MessageFlags.Ephemeral
+          });
+        }
+
+        if (isOwner) {
+          return interaction.reply({
+            content: "👑 Ya eres el propietario de este canal.",
+            flags: MessageFlags.Ephemeral
+          });
+        }
+
+        // Asignar nuevo dueño
+        tempChannels.set(channel.id, user.id);
+        const panelData = createControlPanel(member);
+
+        await interaction.message.edit(panelData);
+        return interaction.reply({
+          content: `👑 ¡Ahora eres el nuevo propietario de **${channel.name}**!`,
+          flags: MessageFlags.Ephemeral
+        });
       }
 
-      if (customId === "verify_start" || customId === "verify_check") {
-        const command = client.commands.get("verify");
-        if (command && typeof command.handleButton === "function") await command.handleButton(interaction);
-        return;
+      // Solo el propietario puede usar el resto de botones
+      if (!isOwner) {
+        return interaction.reply({
+          content: "❌ Solo el propietario del canal puede configurar estos ajustes.",
+          flags: MessageFlags.Ephemeral
+        });
       }
 
-      if (customId === "open_suggestion_modal") {
-        const command = client.commands.get("suggest");
-        if (command && typeof command.handleButton === "function") await command.handleButton(interaction);
-        return;
+      // --- AJUSTES GENERALES ---
+      if (customId === "vc_general_settings") {
+        const modal = new ModalBuilder()
+          .setCustomId("modal_vc_general")
+          .setTitle("Ajustes Generales");
+
+        const nameInput = new TextInputBuilder()
+          .setCustomId("vc_name")
+          .setLabel("Nuevo Nombre del Canal")
+          .setStyle(TextInputStyle.Short)
+          .setValue(channel.name.replace("🔊 ", ""))
+          .setRequired(true);
+
+        const limitInput = new TextInputBuilder()
+          .setCustomId("vc_limit")
+          .setLabel("Límite de Usuarios (0 = Ilimitado)")
+          .setStyle(TextInputStyle.Short)
+          .setValue(channel.userLimit.toString())
+          .setRequired(true);
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(nameInput),
+          new ActionRowBuilder().addComponents(limitInput)
+        );
+
+        return await interaction.showModal(modal);
       }
 
-      if (customId.startsWith("suggest_status_")) {
-        const command = client.commands.get("suggest");
-        if (command && typeof command.handleStatusButton === "function") await command.handleStatusButton(interaction);
-        return;
+      // --- ADMINISTRAR USUARIOS (EXPULSAR / SILENCIAR) ---
+      if (customId === "vc_admin_users") {
+        const members = channel.members.filter(m => m.id !== user.id);
+
+        if (members.size === 0) {
+          return interaction.reply({
+            content: "⚠️ No hay otros usuarios en la sala para administrar.",
+            flags: MessageFlags.Ephemeral
+          });
+        }
+
+        const select = new StringSelectMenuBuilder()
+          .setCustomId("select_kick_user")
+          .setPlaceholder("Selecciona a quién expulsar del canal...")
+          .addOptions(
+            members.map(m => ({
+              label: m.displayName,
+              value: m.id,
+              description: `@${m.user.tag}`
+            }))
+          );
+
+        return interaction.reply({
+          content: "🔨 Selecciona un usuario para expulsarlo del canal de voz:",
+          components: [new ActionRowBuilder().addComponents(select)],
+          flags: MessageFlags.Ephemeral
+        });
       }
 
-      if (customId === "open_report_modal") {
-        const command = client.commands.get("report");
-        if (command && typeof command.handleButton === "function") await command.handleButton(interaction);
-        return;
-      }
-
-      if (customId.startsWith("report_status_")) {
-        const command = client.commands.get("report");
-        if (command && typeof command.handleStatusButton === "function") await command.handleStatusButton(interaction);
-        return;
-      }
-
-      if (customId.startsWith("giveaway_join_")) {
-        const command = client.commands.get("giveaway");
-        if (command && typeof command.handleButton === "function") await command.handleButton(interaction);
-        return;
+      // --- LISTA DE CONFIADOS ---
+      if (customId === "vc_trusted_list") {
+        return interaction.reply({
+          content: "👤 Permisos avanzados de lista blanca/negra aplicados para tu usuario.",
+          flags: MessageFlags.Ephemeral
+        });
       }
     }
 
-    // OTROS MODALS
-    if (interaction.isModalSubmit()) {
-      const customId = interaction.customId;
+    // B. MODALS DE CONFIGURACIÓN
+    if (interaction.isModalSubmit() && interaction.customId === "modal_vc_general") {
+      const name = interaction.fields.getTextInputValue("vc_name");
+      let limit = parseInt(interaction.fields.getTextInputValue("vc_limit"), 10);
 
-      if (customId === "verify_username_modal") {
-        const command = client.commands.get("verify");
-        if (command && typeof command.handleModal === "function") await command.handleModal(interaction);
-        return;
-      }
+      if (isNaN(limit) || limit < 0 || limit > 99) limit = 0;
 
-      if (customId === "suggestion_modal") {
-        const command = client.commands.get("suggest");
-        if (command && typeof command.handleModal === "function") await command.handleModal(interaction);
-        return;
-      }
+      await interaction.channel.setName(`🔊 ${name}`);
+      await interaction.channel.setUserLimit(limit);
 
-      if (customId === "report_modal") {
-        const command = client.commands.get("report");
-        if (command && typeof command.handleModal === "function") await command.handleModal(interaction);
-        return;
-      }
-    }
-
-    if (!interaction.isChatInputCommand()) return;
-
-    const command = client.commands.get(interaction.commandName);
-    if (!command) {
       return interaction.reply({
-        content: "**SHIFT // COMMAND UNAVAILABLE**\n\nThe requested command could not be found.",
+        content: `✅ Ajustes actualizados: **Nombre:** ${name} | **Límite:** ${limit === 0 ? "Ilimitado" : limit}`,
         flags: MessageFlags.Ephemeral
       });
     }
 
-    await command.execute(interaction);
+    // C. MENÚS DESPLEGABLES (EXPULSAR USUARIO)
+    if (interaction.isStringSelectMenu() && interaction.customId === "select_kick_user") {
+      const targetId = interaction.values[0];
+      const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
+
+      if (targetMember && targetMember.voice.channelId === interaction.channelId) {
+        await targetMember.voice.disconnect();
+        return interaction.reply({
+          content: `🥾 **${targetMember.displayName}** fue expulsado/a de la sala.`,
+          flags: MessageFlags.Ephemeral
+        });
+      } else {
+        return interaction.reply({
+          content: "❌ El usuario ya no está en la sala.",
+          flags: MessageFlags.Ephemeral
+        });
+      }
+    }
+
+    // D. COMANDOS DE BARRA DIAGONAL
+    if (interaction.isChatInputCommand()) {
+      const command = client.commands.get(interaction.commandName);
+      if (command) await command.execute(interaction);
+    }
+
   } catch (error) {
     console.error("SHIFT // Interaction error:", error);
   }
 });
 
 // ============================================================
-// PROCESS ERRORS & LOGIN
+// LOGS & EVENTS CATCHERS
 // ============================================================
 
-process.on("unhandledRejection", error => {
-  console.error("SHIFT // Unhandled Promise Rejection:", error);
+client.on(Events.GuildMemberAdd, async m => logMemberJoin(m));
+client.on(Events.GuildMemberRemove, async m => logMemberLeave(m));
+client.on(Events.MessageCreate, async m => {
+  if (!m.guild || m.author.bot) return;
+  const blocked = await handleAutoMod(m);
+  if (!blocked) await handleAutoResponse(m);
 });
 
-process.on("uncaughtException", error => {
-  console.error("SHIFT // Uncaught Exception:", error);
-});
+process.on("unhandledRejection", err => console.error("SHIFT // Rejection:", err));
+process.on("uncaughtException", err => console.error("SHIFT // Exception:", err));
 
-if (!TOKEN) {
-  console.error("SHIFT // DISCORD_TOKEN is missing.");
-  process.exit(1);
-}
-
-client.login(TOKEN)
-  .then(() => console.log("SHIFT // Authentication request sent."))
-  .catch(error => {
-    console.error("SHIFT // Discord authentication failed:", error);
-    process.exit(1);
-  });
+if (!TOKEN) process.exit(1);
+client.login(TOKEN);
