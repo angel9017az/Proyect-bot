@@ -12,7 +12,7 @@ const FOOTER = "LAST SHIFT // SECURITY SYSTEM";
 
 
 // ============================================================
-// ROLE NAMES
+// ROLE GROUPS
 // ============================================================
 
 const ROLE_GROUPS = {
@@ -41,14 +41,13 @@ const ROLE_GROUPS = {
 
 
 // ============================================================
-// FIND ROLE
+// CHECK ROLE
 // ============================================================
 
 function hasAnyRole(member, roleNames) {
 
     return member.roles.cache.some(
-        role =>
-            roleNames.includes(role.name)
+        role => roleNames.includes(role.name)
     );
 
 }
@@ -60,10 +59,16 @@ function hasAnyRole(member, roleNames) {
 
 function getMembersByRole(members, roleNames) {
 
-    return members.filter(
-        member =>
-            hasAnyRole(member, roleNames)
-    );
+    return members.filter(member => {
+
+        // SHIFT no puede aparecer como staff humano
+        if (member.user.bot) {
+            return false;
+        }
+
+        return hasAnyRole(member, roleNames);
+
+    });
 
 }
 
@@ -74,16 +79,16 @@ function getMembersByRole(members, roleNames) {
 
 function formatMembers(members) {
 
-    if (!members.length) {
+    if (!members || members.size === 0) {
 
         return "No personnel assigned.";
 
     }
 
-    return members
+    return [...members.values()]
         .map(member => {
 
-            return `• ${member}`;
+            return `• <@${member.id}>`;
 
         })
         .join("\n");
@@ -108,11 +113,11 @@ module.exports = {
 
     async execute(interaction) {
 
-        const guild =
-            interaction.guild;
+        // ====================================================
+        // SERVER CHECK
+        // ====================================================
 
-
-        if (!guild) {
+        if (!interaction.guild) {
 
             return interaction.reply({
 
@@ -127,18 +132,16 @@ module.exports = {
         }
 
 
+        const guild = interaction.guild;
+
+
         // ====================================================
         // FETCH MEMBERS
         // ====================================================
 
-        let members;
-
         try {
 
             await guild.members.fetch();
-
-            members =
-                guild.members.cache;
 
         } catch (error) {
 
@@ -160,15 +163,17 @@ module.exports = {
         }
 
 
+        const members =
+            guild.members.cache;
+
+
         // ====================================================
-        // BOT
+        // SHIFT BOT
         // ====================================================
 
-        const botMembers =
-            members.filter(
-                member =>
-                    member.user.bot &&
-                    member.user.id === interaction.client.user.id
+        const shift =
+            members.get(
+                interaction.client.user.id
             );
 
 
@@ -180,10 +185,6 @@ module.exports = {
             getMembersByRole(
                 members,
                 ROLE_GROUPS.owner
-            )
-            .filter(
-                member =>
-                    !member.user.bot
             );
 
 
@@ -191,10 +192,6 @@ module.exports = {
             getMembersByRole(
                 members,
                 ROLE_GROUPS.developer
-            )
-            .filter(
-                member =>
-                    !member.user.bot
             );
 
 
@@ -202,10 +199,6 @@ module.exports = {
             getMembersByRole(
                 members,
                 ROLE_GROUPS.moderator
-            )
-            .filter(
-                member =>
-                    !member.user.bot
             );
 
 
@@ -224,8 +217,8 @@ module.exports = {
 
                 .setDescription(
                     "Official personnel directory of LAST SHIFT.\n\n" +
-                    "Authorized personnel are classified according " +
-                    "to their current server access level."
+                    "Personnel are classified according to their " +
+                    "current authorization level."
                 )
 
                 .addFields({
@@ -233,7 +226,9 @@ module.exports = {
                     name: "OWNER",
 
                     value:
-                        formatMembers(owners)
+                        formatMembers(owners),
+
+                    inline: false
 
                 })
 
@@ -242,7 +237,9 @@ module.exports = {
                     name: "DEVELOPMENT",
 
                     value:
-                        formatMembers(developers)
+                        formatMembers(developers),
+
+                    inline: false
 
                 })
 
@@ -251,7 +248,9 @@ module.exports = {
                     name: "MODERATION",
 
                     value:
-                        formatMembers(moderators)
+                        formatMembers(moderators),
+
+                    inline: false
 
                 })
 
@@ -260,9 +259,11 @@ module.exports = {
                     name: "SECURITY SYSTEM",
 
                     value:
-                        botMembers.size > 0
-                            ? "• SHIFT — Official LAST SHIFT Security System"
-                            : "SHIFT — System unavailable."
+                        shift
+                            ? `• <@${shift.id}> — Official LAST SHIFT Security System`
+                            : "SHIFT — System unavailable.",
+
+                    inline: false
 
                 })
 
@@ -274,6 +275,10 @@ module.exports = {
 
                 .setTimestamp();
 
+
+        // ====================================================
+        // SEND
+        // ====================================================
 
         await interaction.reply({
 
