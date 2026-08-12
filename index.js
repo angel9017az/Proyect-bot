@@ -1,32 +1,30 @@
 // ============================================================
 // LAST SHIFT
 // MAIN BOT
+// RAILWAY READY
 // ES / EN
 // ============================================================
 
 require("dotenv").config();
 
 const {
-
     Client,
-
     Collection,
-
     GatewayIntentBits,
-
     Partials,
-
     Events
-
 } = require("discord.js");
 
+const fs = require("fs");
+const path = require("path");
 
-const fs =
-    require("fs");
 
+// ============================================================
+// ENVIRONMENT
+// ============================================================
 
-const path =
-    require("path");
+const TOKEN = process.env.DISCORD_TOKEN;
+const GUILD_ID = process.env.GUILD_ID;
 
 
 // ============================================================
@@ -34,17 +32,11 @@ const path =
 // ============================================================
 
 const {
-
     logMemberJoin,
-
     logMemberLeave,
-
     logMessageDelete,
-
     logMessageUpdate,
-
     logMemberUpdate
-
 } = require("./utils/logger");
 
 
@@ -52,62 +44,47 @@ const {
 // CLIENT
 // ============================================================
 
-const client =
-    new Client({
+const client = new Client({
 
-        intents: [
+    intents: [
 
-            GatewayIntentBits.Guilds,
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
 
-            GatewayIntentBits.GuildMembers,
+    ],
 
-            GatewayIntentBits.GuildMessages,
+    partials: [
 
-            GatewayIntentBits.MessageContent
+        Partials.Channel,
+        Partials.Message,
+        Partials.User,
+        Partials.GuildMember
 
-        ],
+    ]
 
-        partials: [
-
-            Partials.Channel,
-
-            Partials.Message,
-
-            Partials.User,
-
-            Partials.GuildMember
-
-        ]
-
-    });
+});
 
 
 // ============================================================
-// COMMANDS
+// COMMAND COLLECTION
 // ============================================================
 
-client.commands =
-    new Collection();
-
+client.commands = new Collection();
 
 const commandsPath =
-    path.join(
-
-        __dirname,
-
-        "commands"
-
-    );
+    path.join(__dirname, "commands");
 
 
-if (
-    !fs.existsSync(
-        commandsPath
-    )
-) {
+// ============================================================
+// COMMAND DIRECTORY CHECK
+// ============================================================
+
+if (!fs.existsSync(commandsPath)) {
 
     console.error(
-        "❌ Commands folder not found."
+        "SHIFT // Commands directory not found."
     );
 
     process.exit(1);
@@ -115,38 +92,24 @@ if (
 }
 
 
+// ============================================================
+// LOAD COMMANDS
+// ============================================================
+
 const commandFiles =
-    fs.readdirSync(
-        commandsPath
-    )
-    .filter(
-        file =>
-            file.endsWith(".js")
-    );
+    fs.readdirSync(commandsPath)
+        .filter(file => file.endsWith(".js"));
 
 
-for (
-    const file
-    of commandFiles
-) {
+for (const file of commandFiles) {
 
     const filePath =
-        path.join(
-
-            commandsPath,
-
-            file
-
-        );
-
+        path.join(commandsPath, file);
 
     try {
 
         const command =
-            require(
-                filePath
-            );
-
+            require(filePath);
 
         if (
             !command.data ||
@@ -154,42 +117,27 @@ for (
         ) {
 
             console.warn(
-
-                `⚠️ ${file} does not contain a valid command.`
-
+                `SHIFT // Invalid command: ${file}`
             );
 
             continue;
 
         }
 
-
         client.commands.set(
-
             command.data.name,
-
             command
-
         );
-
 
         console.log(
-
-            `✓ Loaded command: /${command.data.name}`
-
+            `SHIFT // Command loaded: /${command.data.name}`
         );
 
-
-    } catch (
-        error
-    ) {
+    } catch (error) {
 
         console.error(
-
-            `❌ Error loading ${file}:`,
-
+            `SHIFT // Failed to load ${file}:`,
             error
-
         );
 
     }
@@ -202,87 +150,67 @@ for (
 // ============================================================
 
 client.once(
-
     Events.ClientReady,
-
     readyClient => {
 
         console.log("");
 
         console.log(
-
             "=========================================="
-
         );
 
-
         console.log(
-
-            `🌙 ${readyClient.user.tag} is online.`
-
+            "SHIFT // SECURITY SYSTEM"
         );
 
-
         console.log(
-
-            `📡 Servers: ${readyClient.guilds.cache.size}`
-
+            "System: ONLINE"
         );
 
-
         console.log(
-
-            `📦 Commands: ${client.commands.size}`
-
+            `Identity: ${readyClient.user.tag}`
         );
 
-
         console.log(
-
-            "📋 Central logging system: ONLINE"
-
+            `Servers: ${readyClient.guilds.cache.size}`
         );
 
+        console.log(
+            `Commands: ${client.commands.size}`
+        );
 
         console.log(
+            "Logging System: ONLINE"
+        );
 
+        console.log(
+            "Environment: RAILWAY"
+        );
+
+        console.log(
             "=========================================="
-
         );
-
 
         console.log("");
 
     }
-
 );
 
 
 // ============================================================
 // MEMBER JOIN
 // AUTOMATIC VERIFICATION RESTORATION
-// + MEMBER LOG
 // ============================================================
 
 client.on(
-
     Events.GuildMemberAdd,
-
     async member => {
 
         try {
 
-            // =================================================
-            // ONLY TARGET CONFIGURED SERVER
-            // =================================================
-
             if (
-
-                process.env.GUILD_ID &&
-
-                member.guild.id !==
-                process.env.GUILD_ID
-
+                GUILD_ID &&
+                member.guild.id !== GUILD_ID
             ) {
 
                 return;
@@ -291,83 +219,55 @@ client.on(
 
 
             // =================================================
-            // LOG MEMBER JOIN
+            // MEMBER LOG
             // =================================================
 
-            await logMemberJoin(
-                member
-            );
+            await logMemberJoin(member);
 
 
             // =================================================
-            // VERIFY RESTORATION
+            // VERIFICATION RESTORATION
             // =================================================
 
             const verifyCommand =
-                client.commands.get(
-                    "verify"
-                );
+                client.commands.get("verify");
 
-
-            if (
-                !verifyCommand
-            ) {
-
+            if (!verifyCommand) {
                 return;
-
             }
 
-
             if (
-
-                typeof
-                verifyCommand.restoreVerification !==
+                typeof verifyCommand.restoreVerification !==
                 "function"
-
             ) {
 
                 return;
 
             }
-
 
             const restored =
                 await verifyCommand.restoreVerification(
-
                     member
-
                 );
 
-
-            if (
-                restored
-            ) {
+            if (restored) {
 
                 console.log(
-
-                    `🔄 Automatically restored verification for ${member.user.tag}.`
-
+                    `SHIFT // Verification restored: ${member.user.tag}`
                 );
 
             }
 
-
-        } catch (
-            error
-        ) {
+        } catch (error) {
 
             console.error(
-
-                "❌ Member join error:",
-
+                "SHIFT // Member join error:",
                 error
-
             );
 
         }
 
     }
-
 );
 
 
@@ -376,60 +276,42 @@ client.on(
 // ============================================================
 
 client.on(
-
     Events.GuildMemberRemove,
-
     async member => {
 
         try {
 
             if (
-
-                process.env.GUILD_ID &&
-
-                member.guild.id !==
-                process.env.GUILD_ID
-
+                GUILD_ID &&
+                member.guild.id !== GUILD_ID
             ) {
 
                 return;
 
             }
 
+            await logMemberLeave(member);
 
-            await logMemberLeave(
-                member
-            );
-
-
-        } catch (
-            error
-        ) {
+        } catch (error) {
 
             console.error(
-
-                "❌ Member leave log error:",
-
+                "SHIFT // Member leave error:",
                 error
-
             );
 
         }
 
     }
-
 );
 
 
 // ============================================================
 // MEMBER UPDATE
-// Nickname / Roles
+// NICKNAME / ROLES
 // ============================================================
 
 client.on(
-
     Events.GuildMemberUpdate,
-
     async (
         oldMember,
         newMember
@@ -438,44 +320,29 @@ client.on(
         try {
 
             if (
-
-                process.env.GUILD_ID &&
-
-                newMember.guild.id !==
-                process.env.GUILD_ID
-
+                GUILD_ID &&
+                newMember.guild.id !== GUILD_ID
             ) {
 
                 return;
 
             }
 
-
             await logMemberUpdate(
-
                 oldMember,
-
                 newMember
-
             );
 
-
-        } catch (
-            error
-        ) {
+        } catch (error) {
 
             console.error(
-
-                "❌ Member update log error:",
-
+                "SHIFT // Member update error:",
                 error
-
             );
 
         }
 
     }
-
 );
 
 
@@ -484,57 +351,36 @@ client.on(
 // ============================================================
 
 client.on(
-
     Events.MessageDelete,
-
     async message => {
 
         try {
 
+            if (!message.guild) {
+                return;
+            }
+
             if (
-                !message.guild
+                GUILD_ID &&
+                message.guild.id !== GUILD_ID
             ) {
 
                 return;
 
             }
 
+            await logMessageDelete(message);
 
-            if (
-
-                process.env.GUILD_ID &&
-
-                message.guild.id !==
-                process.env.GUILD_ID
-
-            ) {
-
-                return;
-
-            }
-
-
-            await logMessageDelete(
-                message
-            );
-
-
-        } catch (
-            error
-        ) {
+        } catch (error) {
 
             console.error(
-
-                "❌ Message delete log error:",
-
+                "SHIFT // Message delete error:",
                 error
-
             );
 
         }
 
     }
-
 );
 
 
@@ -543,9 +389,7 @@ client.on(
 // ============================================================
 
 client.on(
-
     Events.MessageUpdate,
-
     async (
         oldMessage,
         newMessage
@@ -553,54 +397,34 @@ client.on(
 
         try {
 
+            if (!newMessage.guild) {
+                return;
+            }
+
             if (
-                !newMessage.guild
+                GUILD_ID &&
+                newMessage.guild.id !== GUILD_ID
             ) {
 
                 return;
 
             }
-
-
-            if (
-
-                process.env.GUILD_ID &&
-
-                newMessage.guild.id !==
-                process.env.GUILD_ID
-
-            ) {
-
-                return;
-
-            }
-
 
             await logMessageUpdate(
-
                 oldMessage,
-
                 newMessage
-
             );
 
-
-        } catch (
-            error
-        ) {
+        } catch (error) {
 
             console.error(
-
-                "❌ Message update log error:",
-
+                "SHIFT // Message update error:",
                 error
-
             );
 
         }
 
     }
-
 );
 
 
@@ -609,9 +433,7 @@ client.on(
 // ============================================================
 
 client.on(
-
     Events.InteractionCreate,
-
     async interaction => {
 
         try {
@@ -620,12 +442,38 @@ client.on(
             // BUTTONS
             // =================================================
 
-            if (
-                interaction.isButton()
-            ) {
+            if (interaction.isButton()) {
 
                 const customId =
                     interaction.customId;
+
+
+                // =============================================
+                // HELP
+                // =============================================
+
+                if (
+                    customId.startsWith("help_")
+                ) {
+
+                    const command =
+                        client.commands.get("help");
+
+                    if (
+                        command &&
+                        typeof command.handleButton ===
+                        "function"
+                    ) {
+
+                        await command.handleButton(
+                            interaction
+                        );
+
+                    }
+
+                    return;
+
+                }
 
 
                 // =============================================
@@ -633,37 +481,24 @@ client.on(
                 // =============================================
 
                 if (
-
-                    customId ===
-                    "verify_start" ||
-
-                    customId ===
-                    "verify_check"
-
+                    customId === "verify_start" ||
+                    customId === "verify_check"
                 ) {
 
                     const command =
-                        client.commands.get(
-                            "verify"
-                        );
-
+                        client.commands.get("verify");
 
                     if (
-
                         command &&
-
-                        command.handleButton
-
+                        typeof command.handleButton ===
+                        "function"
                     ) {
 
                         await command.handleButton(
-
                             interaction
-
                         );
 
                     }
-
 
                     return;
 
@@ -675,70 +510,53 @@ client.on(
                 // =============================================
 
                 if (
-
-                    customId ===
-                    "open_suggestion_modal"
-
+                    customId === "open_suggestion_modal"
                 ) {
 
                     const command =
-                        client.commands.get(
-                            "suggest"
-                        );
-
+                        client.commands.get("suggest");
 
                     if (
-
                         command &&
-
-                        command.handleButton
-
+                        typeof command.handleButton ===
+                        "function"
                     ) {
 
                         await command.handleButton(
-
                             interaction
-
                         );
 
                     }
-
 
                     return;
 
                 }
 
 
-                if (
+                // =============================================
+                // SUGGESTION STATUS
+                // =============================================
 
+                if (
                     customId.startsWith(
                         "suggest_status_"
                     )
-
                 ) {
 
                     const command =
-                        client.commands.get(
-                            "suggest"
-                        );
-
+                        client.commands.get("suggest");
 
                     if (
-
                         command &&
-
-                        command.handleStatusButton
-
+                        typeof command.handleStatusButton ===
+                        "function"
                     ) {
 
                         await command.handleStatusButton(
-
                             interaction
-
                         );
 
                     }
-
 
                     return;
 
@@ -750,70 +568,53 @@ client.on(
                 // =============================================
 
                 if (
-
-                    customId ===
-                    "open_report_modal"
-
+                    customId === "open_report_modal"
                 ) {
 
                     const command =
-                        client.commands.get(
-                            "report"
-                        );
-
+                        client.commands.get("report");
 
                     if (
-
                         command &&
-
-                        command.handleButton
-
+                        typeof command.handleButton ===
+                        "function"
                     ) {
 
                         await command.handleButton(
-
                             interaction
-
                         );
 
                     }
-
 
                     return;
 
                 }
 
 
-                if (
+                // =============================================
+                // REPORT STATUS
+                // =============================================
 
+                if (
                     customId.startsWith(
                         "report_status_"
                     )
-
                 ) {
 
                     const command =
-                        client.commands.get(
-                            "report"
-                        );
-
+                        client.commands.get("report");
 
                     if (
-
                         command &&
-
-                        command.handleStatusButton
-
+                        typeof command.handleStatusButton ===
+                        "function"
                     ) {
 
                         await command.handleStatusButton(
-
                             interaction
-
                         );
 
                     }
-
 
                     return;
 
@@ -826,9 +627,7 @@ client.on(
             // MODALS
             // =================================================
 
-            if (
-                interaction.isModalSubmit()
-            ) {
+            if (interaction.isModalSubmit()) {
 
                 const customId =
                     interaction.customId;
@@ -839,34 +638,23 @@ client.on(
                 // =============================================
 
                 if (
-
-                    customId ===
-                    "verify_username_modal"
-
+                    customId === "verify_username_modal"
                 ) {
 
                     const command =
-                        client.commands.get(
-                            "verify"
-                        );
-
+                        client.commands.get("verify");
 
                     if (
-
                         command &&
-
-                        command.handleModal
-
+                        typeof command.handleModal ===
+                        "function"
                     ) {
 
                         await command.handleModal(
-
                             interaction
-
                         );
 
                     }
-
 
                     return;
 
@@ -878,34 +666,23 @@ client.on(
                 // =============================================
 
                 if (
-
-                    customId ===
-                    "suggestion_modal"
-
+                    customId === "suggestion_modal"
                 ) {
 
                     const command =
-                        client.commands.get(
-                            "suggest"
-                        );
-
+                        client.commands.get("suggest");
 
                     if (
-
                         command &&
-
-                        command.handleModal
-
+                        typeof command.handleModal ===
+                        "function"
                     ) {
 
                         await command.handleModal(
-
                             interaction
-
                         );
 
                     }
-
 
                     return;
 
@@ -917,34 +694,23 @@ client.on(
                 // =============================================
 
                 if (
-
-                    customId ===
-                    "report_modal"
-
+                    customId === "report_modal"
                 ) {
 
                     const command =
-                        client.commands.get(
-                            "report"
-                        );
-
+                        client.commands.get("report");
 
                     if (
-
                         command &&
-
-                        command.handleModal
-
+                        typeof command.handleModal ===
+                        "function"
                     ) {
 
                         await command.handleModal(
-
                             interaction
-
                         );
 
                     }
-
 
                     return;
 
@@ -957,36 +723,24 @@ client.on(
             // SLASH COMMAND
             // =================================================
 
-            if (
-                !interaction.isChatInputCommand()
-            ) {
-
+            if (!interaction.isChatInputCommand()) {
                 return;
-
             }
 
 
             const command =
                 client.commands.get(
-
                     interaction.commandName
-
                 );
 
 
-            if (
-                !command
-            ) {
+            if (!command) {
 
                 return interaction.reply({
 
                     content:
-
-                        "❌ **Command unavailable / Comando no disponible**\n\n" +
-
-                        "🇺🇸 This command could not be found.\n" +
-
-                        "🇪🇸 No se pudo encontrar este comando.",
+                        "**SHIFT // COMMAND UNAVAILABLE**\n\n" +
+                        "The requested command could not be found.",
 
                     flags: 64
 
@@ -996,36 +750,28 @@ client.on(
 
 
             await command.execute(
-
                 interaction
-
             );
 
-
-        } catch (
-            error
-        ) {
+        } catch (error) {
 
             console.error(
-
-                "❌ Interaction error:",
-
+                "SHIFT // Interaction error:",
                 error
-
             );
 
+
+            // =================================================
+            // SAFE ERROR RESPONSE
+            // =================================================
 
             try {
 
                 const response = {
 
                     content:
-
-                        "❌ **Unexpected error / Error inesperado**\n\n" +
-
-                        "🇺🇸 An unexpected error occurred while processing your request.\n" +
-
-                        "🇪🇸 Ocurrió un error inesperado al procesar tu solicitud.",
+                        "**SHIFT // SYSTEM ERROR**\n\n" +
+                        "The requested operation could not be completed.",
 
                     flags: 64
 
@@ -1033,11 +779,8 @@ client.on(
 
 
                 if (
-
                     interaction.replied ||
-
                     interaction.deferred
-
                 ) {
 
                     await interaction.followUp(
@@ -1052,17 +795,11 @@ client.on(
 
                 }
 
-
-            } catch (
-                responseError
-            ) {
+            } catch (responseError) {
 
                 console.error(
-
-                    "❌ Could not send error response:",
-
+                    "SHIFT // Error response failed:",
                     responseError
-
                 );
 
             }
@@ -1070,7 +807,6 @@ client.on(
         }
 
     }
-
 );
 
 
@@ -1079,55 +815,43 @@ client.on(
 // ============================================================
 
 process.on(
-
     "unhandledRejection",
-
     error => {
 
         console.error(
-
-            "❌ Unhandled Promise Rejection:",
-
+            "SHIFT // Unhandled Promise Rejection:",
             error
-
         );
 
     }
-
 );
 
 
 process.on(
-
     "uncaughtException",
-
     error => {
 
         console.error(
-
-            "❌ Uncaught Exception:",
-
+            "SHIFT // Uncaught Exception:",
             error
-
         );
 
     }
-
 );
 
 
 // ============================================================
-// TOKEN
+// TOKEN VALIDATION
 // ============================================================
 
-if (
-    !process.env.DISCORD_TOKEN
-) {
+if (!TOKEN) {
 
     console.error(
+        "SHIFT // DISCORD_TOKEN is missing."
+    );
 
-        "❌ DISCORD_TOKEN is missing from .env"
-
+    console.error(
+        "Add DISCORD_TOKEN to Railway Variables."
     );
 
     process.exit(1);
@@ -1139,8 +863,21 @@ if (
 // LOGIN
 // ============================================================
 
-client.login(
+client.login(TOKEN)
+    .then(() => {
 
-    process.env.DISCORD_TOKEN
+        console.log(
+            "SHIFT // Authentication request sent."
+        );
 
-);
+    })
+    .catch(error => {
+
+        console.error(
+            "SHIFT // Discord authentication failed:",
+            error
+        );
+
+        process.exit(1);
+
+    });
