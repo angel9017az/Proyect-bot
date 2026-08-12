@@ -129,47 +129,47 @@ client.on(Events.GuildMemberAdd, async member => {
     await logMemberJoin(member);
 
     // =================================================
-    // BILINGUAL WELCOME SYSTEM (ES / EN)
+    // BILINGUAL WELCOME SYSTEM (ES / EN - FORMAL)
     // =================================================
     if (WELCOME_CHANNEL_ID) {
       const welcomeChannel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
 
       if (welcomeChannel) {
         const welcomeEmbed = new EmbedBuilder()
-          .setColor("#00ffb3") // Color estilo cian/matriz
-          .setTitle("⚡ NUEVO REGISTRO // NEW REGISTRATION")
+          .setColor("#00ffb3")
+          .setTitle("🛡️ REGISTRO DE INGRESO // ACCESSED LOG")
           .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
           .setDescription(
-            `:flag_es: **¡Bienvenido/a a ${member.guild.name}, ${member}!**\n` +
-            `Nos alegra tenerte aquí. Por favor, lee las reglas y completa la verificación si es necesario.\n\n` +
-            `:flag_us: **Welcome to ${member.guild.name}, ${member}!**\n` +
-            `We're glad to have you here. Please make sure to read the rules and proceed with verification if required.`
+            `:flag_es: **Estimado/a ${member}, le damos la bienvenida a ${member.guild.name}.**\n` +
+            `Le solicitamos revisar el reglamento de la comunidad y proceder con el proceso de verificación correspondiente para obtener acceso total.\n\n` +
+            `:flag_us: **Welcome to ${member.guild.name}, ${member}.**\n` +
+            `Please review the community guidelines and complete the verification process to obtain full access.`
           )
           .addFields(
             {
-              name: "👥 Miembro / Member #",
-              value: `\`${member.guild.memberCount}\``,
+              name: "📋 Registro Nº / Entry ID",
+              value: `\`#${member.guild.memberCount}\``,
               inline: true
             },
             {
-              name: "🆔 User ID",
+              name: "🆔 Identificador / User ID",
               value: `\`${member.id}\``,
               inline: true
             }
           )
           .setFooter({ 
-            text: "SHIFT SECURITY SYSTEM", 
+            text: "SHIFT // PROTOCOLO DE SEGURIDAD Y CONTROL DE ACCESO", 
             iconURL: member.guild.iconURL() 
           })
           .setTimestamp();
 
         await welcomeChannel.send({
-          content: `👋 ${member}`,
+          content: `Estimado/a ${member}, su acceso ha sido registrado.`,
           embeds: [welcomeEmbed]
         });
       }
     }
-
+    
     // VERIFICATION RESTORATION
     const verifyCommand = client.commands.get("verify");
     if (!verifyCommand || typeof verifyCommand.restoreVerification !== "function") return;
