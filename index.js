@@ -22,7 +22,8 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  StringSelectMenuBuilder
+  StringSelectMenuBuilder,
+  AttachmentBuilder
 } = require("discord.js");
 
 const fs = require("fs");
@@ -100,16 +101,24 @@ if (fs.existsSync(commandsPath)) {
 }
 
 // ============================================================
-// HELPER: CREAR PANEL DE CONTROL
+// HELPER: CREAR PANEL DE CONTROL (CON BANNER FNAF)
 // ============================================================
 
 function createControlPanel(owner) {
+  // Asegúrate de tener la imagen guardada en ./assets/panel_banner.png
+  const bannerPath = path.join(__dirname, "assets", "panel_banner.png");
+  const hasBanner = fs.existsSync(bannerPath);
+  
+  const files = [];
+  if (hasBanner) {
+    files.push(new AttachmentBuilder(bannerPath, { name: "panel_banner.png" }));
+  }
+
   const embed = new EmbedBuilder()
-    .setColor("#5865F2")
-    .setTitle("⚙️ Panel de control")
+    .setColor("#2b2d31")
+    .setAuthor({ name: "⚙️   Panel de control" })
     .setDescription(
-      `⚙️ **Configuración**\n\n` +
-      `• **PROPIETARIO DEL CANAL**\n` +
+      `🟢 **PROPIETARIO DEL CANAL**\n\n` +
       `👤 ${owner} • \`${owner.user.tag}\`\n\n` +
       `📅 **Cuenta creada:** <t:${Math.floor(owner.user.createdTimestamp / 1000)}:R>\n` +
       `⏰ **Unión al servidor:** <t:${Math.floor(owner.joinedTimestamp / 1000)}:f>`
@@ -117,29 +126,37 @@ function createControlPanel(owner) {
     .setThumbnail(owner.user.displayAvatarURL({ dynamic: true, size: 256 }))
     .setFooter({ text: "SHIFT // VOICE SYSTEM" });
 
+  if (hasBanner) {
+    embed.setImage("attachment://panel_banner.png");
+  }
+
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("vc_general_settings")
-      .setLabel("⚙️ Ajustes generales")
+      .setLabel("Ajustes generales")
+      .setEmoji("⚙️")
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId("vc_admin_users")
-      .setLabel("🔨 Administrar usuarios")
+      .setLabel("Administrar usuarios")
+      .setEmoji("🔨")
       .setStyle(ButtonStyle.Secondary)
   );
 
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("vc_trusted_list")
-      .setLabel("👤 Gestionar lista de confiados")
+      .setLabel("Gestionar lista de confiados")
+      .setEmoji("👤")
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId("vc_claim_channel")
-      .setLabel("👑 Reclamar canal sin propietario")
+      .setLabel("Reclamar canal sin propietario")
+      .setEmoji("👑")
       .setStyle(ButtonStyle.Primary)
   );
 
-  return { embeds: [embed], components: [row1, row2] };
+  return { embeds: [embed], components: [row1, row2], files };
 }
 
 // ============================================================
