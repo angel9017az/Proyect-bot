@@ -28,6 +28,52 @@ const {
 
 const fs = require("fs");
 const path = require("path");
+const express = require("express");
+
+// ==========================================
+// CONFIGURACIÓN DE EXPRESS & MEMORIA RAM
+// ==========================================
+const app = express();
+app.use(express.json());
+
+// Memoria RAM para códigos efímeros de Roblox: Map(code -> { discordId, expiresAt })
+const activeCodes = new Map();
+
+const PORT = process.env.PORT || 3000;
+const ROBLOX_SECRET_KEY = process.env.ROBLOX_SECRET_KEY || "MiClaveSuperSegura123!";
+
+// Endpoint HTTP consultado por Roblox Studio
+app.post("/api/redeem-code", (req, res) => {
+  const { code, robloxUserId } = req.body;
+  const apiKey = req.headers["x-api-key"];
+
+  if (apiKey !== ROBLOX_SECRET_KEY) {
+    return res.status(401).json({ success: false, message: "No autorizado" });
+  }
+
+  if (!code) {
+    return res.json({ success: false, message: "Código no proporcionado" });
+  }
+
+  const cleanCode = code.toUpperCase().trim();
+  const codeData = activeCodes.get(cleanCode);
+
+  // Verificar validez y expiración
+  if (!codeData || Date.now() > codeData.expiresAt) {
+    activeCodes.delete(cleanCode);
+    return res.json({ success: false, message: "Código inválido o expirado" });
+  }
+
+  // ELIMINAR DE LA RAM INMEDIATAMENTE (Garantiza UN SOLO USO)
+  activeCodes.delete(cleanCode);
+
+  console.log(`[SHIFT // ROBLOX] Código ${cleanCode} canjeado con éxito por Roblox ID: ${robloxUserId}`);
+  return res.json({ success: true, message: "¡Código verificado con éxito!" });
+});
+
+app.listen(PORT, () => {
+  console.log(`SHIFT // API Server escuchando en el puerto ${PORT}`);
+});
 
 // ============================================================
 // ENVIRONMENT & VOICE CONFIG
@@ -105,7 +151,6 @@ if (fs.existsSync(commandsPath)) {
 // ============================================================
 
 function createControlPanel(owner) {
-  // Asegúrate de tener la imagen guardada en ./assets/panel_banner.png
   const bannerPath = path.join(__dirname, "assets", "panel_banner.png");
   const hasBanner = fs.existsSync(bannerPath);
   
@@ -116,7 +161,7 @@ function createControlPanel(owner) {
 
   const embed = new EmbedBuilder()
     .setColor("#2b2d31")
-    .setAuthor({ name: "⚙️   Panel de control" })
+    .setAuthor({ name: "⚙️    Panel de control" })
     .setDescription(
       `🟢 **PROPIETARIO DEL CANAL**\n\n` +
       `👤 ${owner} • \`${owner.user.tag}\`\n\n` +
@@ -166,7 +211,7 @@ function createControlPanel(owner) {
 client.once(Events.ClientReady, readyClient => {
   console.log("");
   console.log("==========================================");
-  console.log("SHIFT // CONTROL PANEL VOICE SYSTEM");
+  console.log("SHIFT // CONTROL PANEL VOICE & CODE SYSTEM");
   console.log(`Identity: ${readyClient.user.tag}`);
   console.log("System Status: ONLINE");
   console.log("==========================================");
@@ -186,7 +231,6 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       const member = newState.member;
       const guild = newState.guild;
 
-      // Crear canal privado
       const tempChannel = await guild.channels.create({
         name: `🔊 Sala de ${member.displayName}`,
         type: ChannelType.GuildVoice,
@@ -202,12 +246,10 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       tempChannels.set(tempChannel.id, member.id);
       trustedUsers.set(tempChannel.id, new Set());
 
-      // Mover al creador
       if (member.voice.channel) {
         await member.voice.setChannel(tempChannel);
       }
 
-      // Enviar el panel de control interactivo dentro del chat de la sala
       const panelData = createControlPanel(member);
       await tempChannel.send(panelData);
     }
@@ -229,7 +271,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 });
 
 // ============================================================
-// INTERACTION HANDLER (PANEL DE CONTROL)
+// INTERACTION HANDLER (PANEL DE CONTROL & GENERADOR DE CÓDIGOS)
 // ============================================================
 
 client.on(Events.InteractionCreate, async interaction => {
@@ -240,12 +282,33 @@ client.on(Events.InteractionCreate, async interaction => {
     if (interaction.isButton()) {
       const { customId, channel, user, member } = interaction;
 
+      // --- BOTÓN DE ROBLOX: GENERAR CÓDIGO ---
+      if (customId === "btn_generate_code") {
+        const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+        const durationMinutes = 10;
+        const expiresAt = Date.now() + durationMinutes * 60 * 1000;
+
+        activeCodes.set(code, {
+          discordId: user.id,
+          expiresAt: expiresAt
+        });
+
+        setTimeout(() => {
+          activeCodes.delete(code);
+        }, durationMinutes * 60 * 1000);
+
+        return interaction.reply({
+          content: `🔑 Tu código único es: **${code}**\n⏱️ Expira en 10 minutos. ¡Ingrésalo en la tabla del juego!`,
+          flags: MessageFlags.Ephemeral
+        });
+      }
+
+      // --- CANALES DE VOZ TEMPORALES ---
       if (!tempChannels.has(channel.id)) return;
 
       const currentOwnerId = tempChannels.get(channel.id);
       const isOwner = user.id === currentOwnerId;
 
-      // --- RECLAMAR CANAL ---
       if (customId === "vc_claim_channel") {
         const ownerInChannel = channel.members.has(currentOwnerId);
 
@@ -263,7 +326,6 @@ client.on(Events.InteractionCreate, async interaction => {
           });
         }
 
-        // Asignar nuevo dueño
         tempChannels.set(channel.id, user.id);
         const panelData = createControlPanel(member);
 
@@ -274,7 +336,6 @@ client.on(Events.InteractionCreate, async interaction => {
         });
       }
 
-      // Solo el propietario puede usar el resto de botones
       if (!isOwner) {
         return interaction.reply({
           content: "❌ Solo el propietario del canal puede configurar estos ajustes.",
@@ -282,7 +343,6 @@ client.on(Events.InteractionCreate, async interaction => {
         });
       }
 
-      // --- AJUSTES GENERALES ---
       if (customId === "vc_general_settings") {
         const modal = new ModalBuilder()
           .setCustomId("modal_vc_general")
@@ -310,7 +370,6 @@ client.on(Events.InteractionCreate, async interaction => {
         return await interaction.showModal(modal);
       }
 
-      // --- ADMINISTRAR USUARIOS (EXPULSAR / SILENCIAR) ---
       if (customId === "vc_admin_users") {
         const members = channel.members.filter(m => m.id !== user.id);
 
@@ -339,7 +398,6 @@ client.on(Events.InteractionCreate, async interaction => {
         });
       }
 
-      // --- LISTA DE CONFIADOS ---
       if (customId === "vc_trusted_list") {
         return interaction.reply({
           content: "👤 Permisos avanzados de lista blanca/negra aplicados para tu usuario.",
@@ -395,13 +453,34 @@ client.on(Events.InteractionCreate, async interaction => {
 });
 
 // ============================================================
-// LOGS & EVENTS CATCHERS
+// LOGS, AUTOMOD & COMANDOS DE MENSAJE
 // ============================================================
 
 client.on(Events.GuildMemberAdd, async m => logMemberJoin(m));
 client.on(Events.GuildMemberRemove, async m => logMemberLeave(m));
+
 client.on(Events.MessageCreate, async m => {
   if (!m.guild || m.author.bot) return;
+
+  // COMANDO !setupcode EN EL CANAL DE DISCORD
+  if (m.content === "!setupcode" && m.member.permissions.has("Administrator")) {
+    const embed = new EmbedBuilder()
+      .setTitle("🎁 Recompensa Exclusiva de Discord")
+      .setDescription("Presiona el botón de abajo para generar tu código único e ingrésalo en la tabla del juego para reclamar tu premio.")
+      .setColor(0x5865F2);
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("btn_generate_code")
+        .setLabel("Code Generate")
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji("🔑")
+    );
+
+    await m.channel.send({ embeds: [embed], components: [row] });
+    return;
+  }
+
   const blocked = await handleAutoMod(m);
   if (!blocked) await handleAutoResponse(m);
 });
