@@ -1,317 +1,66 @@
-// ============================================================
-// LAST SHIFT
-// Roblox API Service
-// ============================================================
-
-const ROBLOX_API = "https://users.roblox.com/v1";
-
-
-// ============================================================
-// REQUEST HELPER
-// ============================================================
-
-async function robloxRequest(
-    url,
-    options = {}
-) {
-
-    const response = await fetch(
-        url,
-        {
-            ...options,
-            headers: {
-                "Content-Type": "application/json",
-                ...(options.headers || {})
-            }
-        }
-    );
-
-
-    let data = null;
-
-    try {
-
-        data = await response.json();
-
-    } catch {
-
-        data = null;
-
-    }
-
-
-    if (!response.ok) {
-
-        const error = new Error(
-            `Roblox API returned ${response.status}`
-        );
-
-        error.status = response.status;
-        error.data = data;
-
-        throw error;
-
-    }
-
-
-    return data;
-
-}
-
-
-// ============================================================
-// FIND USER BY USERNAME
-// ============================================================
-
-async function getUserByUsername(
-    username
-) {
-
-    if (
-        !username ||
-        typeof username !== "string"
-    ) {
-
-        return null;
-
-    }
-
-
-    username =
-        username.trim();
-
-
-    if (
-        username.length < 3 ||
-        username.length > 20
-    ) {
-
-        return null;
-
-    }
-
-
-    const data =
-        await robloxRequest(
-
-            `${ROBLOX_API}/usernames/users`,
-
-            {
-
-                method: "POST",
-
-                body: JSON.stringify({
-
-                    usernames: [
-                        username
-                    ],
-
-                    excludeBannedUsers: false
-
-                })
-
-            }
-
-        );
-
-
-    if (
-        !data ||
-        !Array.isArray(data.data) ||
-        data.data.length === 0
-    ) {
-
-        return null;
-
-    }
-
-
-    const user =
-        data.data[0];
-
-
-    return {
-
-        id: String(
-            user.id
-        ),
-
-        username:
-            user.name,
-
-        displayName:
-            user.displayName
-
-    };
-
-}
-
-
-// ============================================================
-// GET USER BY ID
-// ============================================================
-
-async function getUserById(
-    userId
-) {
-
-    if (!userId) {
-
-        return null;
-
-    }
-
-
-    const data =
-        await robloxRequest(
-
-            `${ROBLOX_API}/users/${encodeURIComponent(
-                userId
-            )}`
-
-        );
-
-
-    if (!data) {
-
-        return null;
-
-    }
-
-
-    return {
-
-        id: String(
-            data.id
-        ),
-
-        username:
-            data.name,
-
-        displayName:
-            data.displayName,
-
-        description:
-            data.description || "",
-
-        created:
-            data.created,
-
-        isBanned:
-            Boolean(
-                data.isBanned
-            )
-
-    };
-
-}
-
-
-// ============================================================
-// CHECK VERIFICATION CODE
-// ============================================================
-
-async function checkVerificationCode(
-    userId,
-    code
-) {
-
-    const user =
-        await getUserById(
-            userId
-        );
-
-
-    if (!user) {
-
-        return {
-
-            success: false,
-
-            reason:
-                "USER_NOT_FOUND"
-
-        };
-
-    }
-
-
-    if (
-        user.isBanned
-    ) {
-
-        return {
-
-            success: false,
-
-            reason:
-                "USER_BANNED",
-
-            user
-
-        };
-
-    }
-
-
-    const description =
-        String(
-            user.description || ""
-        );
-
-
-    const normalizedDescription =
-        description
-            .toUpperCase()
-            .replace(/\s+/g, " ")
-            .trim();
-
-
-    const normalizedCode =
-        String(
-            code
-        )
-            .toUpperCase()
-            .trim();
-
-
-    if (
-        !normalizedDescription.includes(
-            normalizedCode
-        )
-    ) {
-
-        return {
-
-            success: false,
-
-            reason:
-                "CODE_NOT_FOUND",
-
-            user
-
-        };
-
-    }
-
-
-    return {
-
-        success: true,
-
-        user
-
-    };
-
-}
-
-
-module.exports = {
-
-    getUserByUsername,
-
-    getUserById,
-
-    checkVerificationCode
-
+const express = require('express');
+const axios = require('axios');
+const app = express();
+
+app.use(express.json());
+
+const API_KEY = "CLAVE_SECRETA_ROBLOX_123";
+const WEBHOOK_URL = "https://discord.com/api/webhooks/1536975437664882708/_oDKJuzaOwACkcdVxn6YxVIvYPJ_JgnaZCp5pydkDx-VDUGzPA5-4Dg_u4m1amsy486S";
+
+const catalogo = [
+    { nombre: "The Puppet", Rarity: "LEGENDARIO", puntosMin: 4000, puntosMax: 7000, robux: 160, color: 0x8A2BE2, peso: 60 },
+    { nombre: "Ennard", Rarity: "LEGENDARIO", puntosMin: 4500, puntosMax: 8000, robux: 180, color: 0xFF0055, peso: 30 },
+    { nombre: "Golden Freddy", Rarity: "LEGENDARIO", puntosMin: 5000, puntosMax: 8500, robux: 200, color: 0xFFD700, peso: 10 }
+];
+
+let ofertaGlobalActiva = {
+    nombre: "The Puppet",
+    precio: 5000
 };
+
+// Algoritmo de rotación
+function rotarOfertaGlobal() {
+    const pesoTotal = catalogo.reduce((acc, item) => acc + item.peso, 0);
+    let rnd = Math.floor(Math.random() * pesoTotal) + 1;
+    let acumulado = 0;
+    let seleccionado = catalogo[0];
+
+    for (const item of catalogo) {
+        acumulado += item.peso;
+        if (rnd <= acumulado) {
+            seleccionado = item;
+            break;
+        }
+    }
+
+    const precioGenerado = Math.floor((Math.random() * (seleccionado.puntosMax - seleccionado.puntosMin) + seleccionado.puntosMin) / 50) * 50;
+
+    ofertaGlobalActiva = {
+        nombre: seleccionado.nombre,
+        precio: precioGenerado
+    };
+
+    // Enviar un solo mensaje a Discord a nivel servidor central
+    axios.post(WEBHOOK_URL, {
+        embeds: [{
+            title: "👁️‍🗨️ ¡MERCADO NEGRO HA ROTADO!",
+            description: "Se ha liberado un personaje en el Mercado Negro.",
+            color: seleccionado.color,
+            fields: [
+                { name: "👤 Personaje en Oferta", value: `**${seleccionado.nombre}** (${seleccionado.Rarity})`, inline: false },
+                { name: "🪙 Costo Puntos", value: `🪙 **${precioGenerado}** ShadowCoins`, inline: true },
+                { name: "💵 Costo Robux", value: `💵 **${seleccionado.robux}** Robux`, inline: true }
+            ],
+            footer: { text = "Sistema de Rotación Global • Mercado Negro" }
+        }]
+    }).catch(err => console.error("Error al enviar Webhook:", err.message));
+}
+
+// Bucle de rotación global en Node.js (ejemplo: cada 1 hora)
+setInterval(rotarOfertaGlobal, 3600000); 
+
+// Endpoint para que Roblox consulte la oferta activa
+app.get('/api/get-active-offer', (req, res) => {
+    if (req.query.key !== API_KEY) return res.status(401).json({ error: "Unauthorized" });
+    res.json(ofertaGlobalActiva);
+});
